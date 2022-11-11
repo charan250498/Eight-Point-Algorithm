@@ -46,16 +46,50 @@ def drawlines(img1,img2,lines,pts1,pts2):
         img2 = cv2.circle(img2,tuple(pt2),5,color,-1)
     return img1,img2
 
+def get_transformation_matrix(num_points, pts_mean, pts_distance_to_mean):
+    transformation_matrix = np.zeros((num_points, num_points))
+    for i in range(num_points):
+        transformation_matrix[i, i] = (2 ** 0.5)/pts_distance_to_mean
+    transformation_matrix_x = np.hstack((transformation_matrix, np.array([1 - ((2 ** 0.5) * pts_mean[0])/pts_distance_to_mean] * num_points)[:, None]))
+    transformation_matrix_y = np.hstack((transformation_matrix, np.array([1 - ((2 ** 0.5) * pts_mean[1])/pts_distance_to_mean] * num_points)[:, None]))
+    return transformation_matrix_x, transformation_matrix_y
+
+def normalize_points(pts):
+    pts_mean = np.mean(pts, axis = 0)
+    pts_distance_to_mean = np.mean(np.sum((pts - pts_mean) ** 2, axis = 1) ** 0.5)
+    transformation_matrix_x, transformation_matrix_y = get_transformation_matrix(pts.shape[0], pts_mean, pts_distance_to_mean)
+    pts = np.vstack((pts, np.array([1, 1])))
+    pts_x = transformation_matrix_x @ pts[:, 0][:, None]
+    pts_y = transformation_matrix_y @ pts[:, 1][:, None]
+    return np.hstack((pts_x, pts_y))
+
 def FindFundamentalMatrix(pts1, pts2):
     #Input: two lists of corresponding keypoints (numpy arrays of shape (N, 2))
     #Output: fundamental matrix (numpy array of shape (3, 3))
 
     #todo: Normalize the points
+    pts1 = normalize_points(pts1)
+    pts2 = normalize_points(pts2)
 
     #todo: Form the matrix A
+    A = np.zeros((8, 8))
+    
+    A[:, 0] = pts1[:8, 0] * pts2[:8, 0]
+    A[:, 1] = pts1[:8, 0] * pts2[:8, 1]
+    A[:, 2] = pts1[:8, 0]
+    A[:, 3] = pts1[:8, 1] * pts2[:8, 0]
+    A[:, 4] = pts1[:8, 1] * pts2[:8, 1]
+    A[:, 5] = pts1[:8, 1]
+    A[:, 6] = pts2[:8, 0]
+    A[:, 7] = pts2[:8, 1]
+    
+    A = np.hstack((A, np.ones(8)[:, None]))
 
     #todo: Find the fundamental matrix
-    raise NotImplementedError
+    u, sigma, v = np.linalg.svd(A)
+    fundamental_matrix = v[-1, :].reshape(3,3)
+
+    return fundamental_matrix
 
 def FindFundamentalMatrixRansac(pts1, pts2, num_trials = 1000, threshold = 0.01):
     #Input: two lists of corresponding keypoints (numpy arrays of shape (N, 2))

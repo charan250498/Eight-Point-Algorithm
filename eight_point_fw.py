@@ -46,57 +46,64 @@ def drawlines(img1,img2,lines,pts1,pts2):
         img2 = cv2.circle(img2,tuple(pt2),5,color,-1)
     return img1,img2
 
-def get_transformation_matrix(num_points, pts_mean, pts_distance_to_mean):
-    transformation_matrix = np.zeros((num_points, num_points))
-    for i in range(num_points):
-        transformation_matrix[i, i] = (2 ** 0.5)/pts_distance_to_mean
-    transformation_matrix_x = np.hstack((transformation_matrix, np.array([-1 * ((2 ** 0.5) * pts_mean[0])/pts_distance_to_mean] * num_points)[:, None]))
-    transformation_matrix_y = np.hstack((transformation_matrix, np.array([-1 * ((2 ** 0.5) * pts_mean[1])/pts_distance_to_mean] * num_points)[:, None]))
-    return transformation_matrix_x, transformation_matrix_y
+def get_transformation_matrix(pts_mean, pts_distance_to_mean):
+    transformation_matrix = np.array([((2 ** 0.5)/pts_distance_to_mean), 0, (-1 * ((2 ** 0.5) * pts_mean[0])/pts_distance_to_mean),
+                                        0, ((2 ** 0.5)/pts_distance_to_mean), (-1 * ((2 ** 0.5) * pts_mean[1])/pts_distance_to_mean),
+                                        0, 0, 1])
+    return transformation_matrix.reshape(3, 3)
 
 def normalize_points(pts):
+    num_points = pts.shape[0]
     pts_mean = np.mean(pts, axis = 0)
     pts_distance_to_mean = np.mean(np.sum((pts - pts_mean) ** 2, axis = 1) ** 0.5)
-    transformation_matrix_x, transformation_matrix_y = get_transformation_matrix(pts.shape[0], pts_mean, pts_distance_to_mean)
-    pts = np.vstack((pts, np.array([1, 1])))
-    pts_x = transformation_matrix_x @ pts[:, 0][:, None]
-    pts_y = transformation_matrix_y @ pts[:, 1][:, None]
-    return np.hstack((pts_x, pts_y))
+    transformation_matrix = get_transformation_matrix(pts_mean, pts_distance_to_mean)
+    pts = np.vstack((pts.T, np.ones(num_points)))
+    pts = transformation_matrix @ pts
+    return pts[:2, :].T, pts_mean, pts_distance_to_mean
 
 def FindFundamentalMatrix(pts1, pts2):
     #Input: two lists of corresponding keypoints (numpy arrays of shape (N, 2))
-    #Output: fundamental matrix (numpy array of shape (3, 3))
+    #Output: fundamental matrix (numpy array of shape (3, 3))\
+    num_points = pts1.shape[0]
 
     #todo: Normalize the points
-    pts1 = normalize_points(pts1)
-    pts2 = normalize_points(pts2)
+    pts1, pts1_mean, pts1_distance_to_mean = normalize_points(pts1)
+    pts2, pts2_mean, pts2_distance_to_mean = normalize_points(pts2)
 
     #############################
-    #print("pts1 mean ", np.mean(pts1, axis = 0))
-    #print("pts2 mean ", np.mean(pts2, axis = 0))
-    #print("pts1 mean distance ", np.mean(np.sum((pts1 - np.mean(pts1, axis = 0)) ** 2, axis = 1) ** 0.5))
-    #print("pts2 mean distance ", np.mean(np.sum((pts2 - np.mean(pts2, axis = 0)) ** 2, axis = 1) ** 0.5))
+    print("pts1 mean ", np.mean(pts1, axis = 0))
+    print("pts2 mean ", np.mean(pts2, axis = 0))
+    print("pts1 mean distance ", np.mean(np.sum((pts1 - np.mean(pts1, axis = 0)) ** 2, axis = 1) ** 0.5))
+    print("pts2 mean distance ", np.mean(np.sum((pts2 - np.mean(pts2, axis = 0)) ** 2, axis = 1) ** 0.5))
     #############################
 
     #todo: Form the matrix A
-    A = np.zeros((8, 8))
+    A = np.zeros((num_points, 8))
     
-    A[:, 0] = pts1[:8, 0] * pts2[:8, 0]
-    A[:, 1] = pts1[:8, 0] * pts2[:8, 1]
-    A[:, 2] = pts1[:8, 0]
-    A[:, 3] = pts1[:8, 1] * pts2[:8, 0]
-    A[:, 4] = pts1[:8, 1] * pts2[:8, 1]
-    A[:, 5] = pts1[:8, 1]
-    A[:, 6] = pts2[:8, 0]
-    A[:, 7] = pts2[:8, 1]
+    A[:, 0] = pts1[:, 0] * pts2[:, 0]
+    A[:, 1] = pts1[:, 0] * pts2[:, 1]
+    A[:, 2] = pts1[:, 0]
+    A[:, 3] = pts1[:, 1] * pts2[:, 0]
+    A[:, 4] = pts1[:, 1] * pts2[:, 1]
+    A[:, 5] = pts1[:, 1]
+    A[:, 6] = pts2[:, 0]
+    A[:, 7] = pts2[:, 1]
     
-    A = np.hstack((A, np.ones(8)[:, None]))
+    A = np.hstack((A, np.ones(num_points)[:, None]))
+    print(A)
 
     #todo: Find the fundamental matrix
     u, sigma, v = np.linalg.svd(A)
-    print("Row", v[-1, :].reshape(3,3))
-    print("Column", v[:, -1].reshape(3,3))
     fundamental_matrix = v[-1, :].reshape(3,3)
+
+    ####################################
+    u1, sigma1, v1 = np.linalg.svd(fundamental_matrix)
+    sigma1[2] = 0
+    #print(u1[:, 0][None, :].shape)
+    fundamental_matrix = u1 @ np.diag(sigma1) @ v1
+    ####################################
+
+    fundamental_matrix = get_transformation_matrix(pts1_mean, pts1_distance_to_mean).T @ fundamental_matrix @ get_transformation_matrix(pts2_mean, pts2_distance_to_mean)
 
     return fundamental_matrix
 
@@ -123,48 +130,81 @@ if __name__ == '__main__':
     pts1, pts2 = find_matching_keypoints(image1, image2)
 
     #Builtin opencv function for comparison
-    F_true = cv2.findFundamentalMat(pts1[:8, :8], pts2[:8, :8], cv2.FM_8POINT)[0]
-    print(F_true)
+    #F_true = cv2.findFundamentalMat(pts1[:8, :8], pts2[:8, :8], cv2.FM_8POINT)[0]
+    F_true = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
+    print(F_true) ##################################
 
     #todo: FindFundamentalMatrix
     if use_ransac:
         F = FindFundamentalMatrixRansac(pts1, pts2)
     else:
-        F = FindFundamentalMatrix(pts1[:8, :8], pts2[:8, :8])
-        print(F)
+        #F = FindFundamentalMatrix(pts1[:8, :8], pts2[:8, :8])
+        F = FindFundamentalMatrix(pts1, pts2)
+        print(F) ####################################
 
     # Find epilines corresponding to points in second image,  and draw the lines on first image
-    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F) # Modifying from F_true to F
+    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F) # Modifying from F_true to F #######################################
     lines1 = lines1.reshape(-1, 3)
     img1, img2 = drawlines(image1, image2, lines1, pts1, pts2)
     fig, axis = plt.subplots(1, 2)
 
     axis[0].imshow(img1)
-    axis[0].set_title('Image 1')
+    axis[0].set_title('My Image 1')
     axis[0].axis('off')
     axis[1].imshow(img2)
-    axis[1].set_title('Image 2')
+    axis[1].set_title('My Image 2')
     axis[1].axis('off')
 
     plt.show()
 
+    ###############################################################################################
+    # Find epilines corresponding to points in second image,  and draw the lines on first image
+    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F_true) # Modifying from F_true to F #######################################
+    lines1 = lines1.reshape(-1, 3)
+    img1, img2 = drawlines(image1, image2, lines1, pts1, pts2)
+    fig, axis = plt.subplots(1, 2)
+
+    axis[0].imshow(img1)
+    axis[0].set_title('CV2 Image 1')
+    axis[0].axis('off')
+    axis[1].imshow(img2)
+    axis[1].set_title('CV2 Image 2')
+    axis[1].axis('off')
+
+    plt.show()
+    ###############################################################################################
 
     # Find epilines corresponding to points in first image, and draw the lines on second image
-    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F) # Modifying from F_true to F
+    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F) # Modifying from F_true to F ########################################
     lines2 = lines2.reshape(-1, 3)
     img1, img2 = drawlines(image2, image1, lines2, pts2, pts1)
     fig, axis = plt.subplots(1, 2)
 
     axis[0].imshow(img1)
-    axis[0].set_title('Image 1')
+    axis[0].set_title('My Image 1')
     axis[0].axis('off')
     axis[1].imshow(img2)
-    axis[1].set_title('Image 2')
+    axis[1].set_title('My Image 2')
     axis[1].axis('off')
 
     plt.show()
 
+    ###############################################################################################
+    # Find epilines corresponding to points in first image, and draw the lines on second image
+    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F_true) # Modifying from F_true to F ########################################
+    lines2 = lines2.reshape(-1, 3)
+    img1, img2 = drawlines(image2, image1, lines2, pts2, pts1)
+    fig, axis = plt.subplots(1, 2)
 
+    axis[0].imshow(img1)
+    axis[0].set_title('CV2 Image 1')
+    axis[0].axis('off')
+    axis[1].imshow(img2)
+    axis[1].set_title('CV2 Image 2')
+    axis[1].axis('off')
+
+    plt.show()
+    ###############################################################################################
 
 
 

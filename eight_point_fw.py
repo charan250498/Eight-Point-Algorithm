@@ -70,40 +70,30 @@ def FindFundamentalMatrix(pts1, pts2):
     pts1, pts1_mean, pts1_distance_to_mean = normalize_points(pts1)
     pts2, pts2_mean, pts2_distance_to_mean = normalize_points(pts2)
 
-    #############################
-    print("pts1 mean ", np.mean(pts1, axis = 0))
-    print("pts2 mean ", np.mean(pts2, axis = 0))
-    print("pts1 mean distance ", np.mean(np.sum((pts1 - np.mean(pts1, axis = 0)) ** 2, axis = 1) ** 0.5))
-    print("pts2 mean distance ", np.mean(np.sum((pts2 - np.mean(pts2, axis = 0)) ** 2, axis = 1) ** 0.5))
-    #############################
-
     #todo: Form the matrix A
-    A = np.zeros((num_points, 8))
+    A = np.zeros((8, num_points))
     
-    A[:, 0] = pts1[:, 0] * pts2[:, 0]
-    A[:, 1] = pts1[:, 0] * pts2[:, 1]
-    A[:, 2] = pts1[:, 0]
-    A[:, 3] = pts1[:, 1] * pts2[:, 0]
-    A[:, 4] = pts1[:, 1] * pts2[:, 1]
-    A[:, 5] = pts1[:, 1]
-    A[:, 6] = pts2[:, 0]
-    A[:, 7] = pts2[:, 1]
+    A[0, :] = pts2[:, 0] * pts1[:, 0]
+    A[1, :] = pts2[:, 0] * pts1[:, 1]
+    A[2, :] = pts2[:, 0]
+    A[3, :] = pts2[:, 1] * pts1[:, 0]
+    A[4, :] = pts2[:, 1] * pts1[:, 1]
+    A[5, :] = pts2[:, 1]
+    A[6, :] = pts1[:, 0]
+    A[7, :] = pts1[:, 1]
     
-    A = np.hstack((A, np.ones(num_points)[:, None]))
-    print(A)
+    A = np.vstack((A, np.ones(A.shape[1])))
 
     #todo: Find the fundamental matrix
     u, sigma, v = np.linalg.svd(A)
-    fundamental_matrix = v[-1, :].reshape(3,3)
+    print(u.shape)
+    fundamental_matrix = u[:, -1].reshape(3,3)
 
-    ####################################
     u1, sigma1, v1 = np.linalg.svd(fundamental_matrix)
     sigma1[2] = 0
-    #print(u1[:, 0][None, :].shape)
     fundamental_matrix = u1 @ np.diag(sigma1) @ v1
-    ####################################
 
-    fundamental_matrix = get_transformation_matrix(pts1_mean, pts1_distance_to_mean).T @ fundamental_matrix @ get_transformation_matrix(pts2_mean, pts2_distance_to_mean)
+    fundamental_matrix = get_transformation_matrix(pts2_mean, pts2_distance_to_mean).T @ fundamental_matrix @ get_transformation_matrix(pts1_mean, pts1_distance_to_mean)
 
     return fundamental_matrix
 
@@ -120,8 +110,8 @@ if __name__ == '__main__':
     use_ransac = False
 
     #Load images
-    image1_path = os.path.join(data_path, 'myleft.jpg')
-    image2_path = os.path.join(data_path, 'myright.jpg')
+    image1_path = os.path.join(data_path, 'notredam_1.jpg')
+    image2_path = os.path.join(data_path, 'notredam2.jpg')
     image1 = np.array(Image.open(image1_path).convert('L'))
     image2 = np.array(Image.open(image2_path).convert('L'))
 
@@ -132,7 +122,6 @@ if __name__ == '__main__':
     #Builtin opencv function for comparison
     #F_true = cv2.findFundamentalMat(pts1[:8, :8], pts2[:8, :8], cv2.FM_8POINT)[0]
     F_true = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
-    print(F_true) ##################################
 
     #todo: FindFundamentalMatrix
     if use_ransac:
@@ -140,10 +129,10 @@ if __name__ == '__main__':
     else:
         #F = FindFundamentalMatrix(pts1[:8, :8], pts2[:8, :8])
         F = FindFundamentalMatrix(pts1, pts2)
-        print(F) ####################################
 
+    # Plot the results of my Fundamental matrix
     # Find epilines corresponding to points in second image,  and draw the lines on first image
-    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F) # Modifying from F_true to F #######################################
+    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F)
     lines1 = lines1.reshape(-1, 3)
     img1, img2 = drawlines(image1, image2, lines1, pts1, pts2)
     fig, axis = plt.subplots(1, 2)
@@ -157,9 +146,9 @@ if __name__ == '__main__':
 
     plt.show()
 
-    ###############################################################################################
+    # Plot the results of CV2 Fundamental matrix
     # Find epilines corresponding to points in second image,  and draw the lines on first image
-    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F_true) # Modifying from F_true to F #######################################
+    lines1 = cv2.computeCorrespondEpilines(pts2.reshape(-1, 1, 2), 2, F_true)
     lines1 = lines1.reshape(-1, 3)
     img1, img2 = drawlines(image1, image2, lines1, pts1, pts2)
     fig, axis = plt.subplots(1, 2)
@@ -172,10 +161,10 @@ if __name__ == '__main__':
     axis[1].axis('off')
 
     plt.show()
-    ###############################################################################################
 
+    # Plot the results of my Fundamental matrix
     # Find epilines corresponding to points in first image, and draw the lines on second image
-    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F) # Modifying from F_true to F ########################################
+    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F)
     lines2 = lines2.reshape(-1, 3)
     img1, img2 = drawlines(image2, image1, lines2, pts2, pts1)
     fig, axis = plt.subplots(1, 2)
@@ -189,9 +178,9 @@ if __name__ == '__main__':
 
     plt.show()
 
-    ###############################################################################################
+    # Plot the results of CV2 Fundamental matrix 
     # Find epilines corresponding to points in first image, and draw the lines on second image
-    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F_true) # Modifying from F_true to F ########################################
+    lines2 = cv2.computeCorrespondEpilines(pts1.reshape(-1, 1, 2), 1, F_true)
     lines2 = lines2.reshape(-1, 3)
     img1, img2 = drawlines(image2, image1, lines2, pts2, pts1)
     fig, axis = plt.subplots(1, 2)
@@ -204,7 +193,3 @@ if __name__ == '__main__':
     axis[1].axis('off')
 
     plt.show()
-    ###############################################################################################
-
-
-

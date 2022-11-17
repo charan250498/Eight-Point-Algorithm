@@ -3,6 +3,7 @@ import cv2
 from PIL import Image
 import matplotlib.pyplot as plt
 import os
+import random
 
 def find_matching_keypoints(image1, image2):
     #Input: two images (numpy arrays)
@@ -86,7 +87,6 @@ def FindFundamentalMatrix(pts1, pts2):
 
     #todo: Find the fundamental matrix
     u, sigma, v = np.linalg.svd(A)
-    print(u.shape)
     fundamental_matrix = u[:, -1].reshape(3,3)
 
     u1, sigma1, v1 = np.linalg.svd(fundamental_matrix)
@@ -97,21 +97,41 @@ def FindFundamentalMatrix(pts1, pts2):
 
     return fundamental_matrix
 
-def FindFundamentalMatrixRansac(pts1, pts2, num_trials = 1000, threshold = 0.01):
+def FindFundamentalMatrixRansac(pts1, pts2, num_trials = 2000, threshold = 0.01):
     #Input: two lists of corresponding keypoints (numpy arrays of shape (N, 2))
     #Output: fundamental matrix (numpy array of shape (3, 3))
-
     #todo: Run RANSAC and find the best fundamental matrix
-    raise NotImplementedError
+    best_inlier_count = -1
+    best_fundamental_matrix = None
+
+    num_points = pts1.shape[0]
+
+    for _ in range(num_trials):
+        indices = random.sample(range(num_points), 8)
+        fundamental_matrix = FindFundamentalMatrix(pts1[indices], pts2[indices])
+        test_indices = np.setdiff1d(np.arange(num_points), np.asarray(indices))
+
+        # Check if the point corresponding to the test_indices are inliers or outliers.
+        temp = np.hstack((pts2[test_indices], np.ones(len(test_indices))[:, None])) @ fundamental_matrix
+        temp = temp * np.hstack((pts1[test_indices], np.ones(len(test_indices))[:, None]))
+        temp = np.absolute(np.sum(temp, axis = 1))
+        inlier_count = (temp <= threshold).sum()
+        if inlier_count > best_inlier_count:
+            best_inlier_count = inlier_count
+            best_fundamental_matrix = fundamental_matrix
+    print("Number of inliers ", best_inlier_count)
+    print("Best_fundamental_matrix", best_fundamental_matrix)
+
+    return best_fundamental_matrix
 
 if __name__ == '__main__':
     #Set parameters
     data_path = './data'
-    use_ransac = False
+    use_ransac = True
 
     #Load images
-    image1_path = os.path.join(data_path, 'notredam_1.jpg')
-    image2_path = os.path.join(data_path, 'notredam2.jpg')
+    image1_path = os.path.join(data_path, 'mount_rushmore_1.jpg')
+    image2_path = os.path.join(data_path, 'mount_rushmore_2.jpg')
     image1 = np.array(Image.open(image1_path).convert('L'))
     image2 = np.array(Image.open(image2_path).convert('L'))
 
@@ -121,7 +141,8 @@ if __name__ == '__main__':
 
     #Builtin opencv function for comparison
     #F_true = cv2.findFundamentalMat(pts1[:8, :8], pts2[:8, :8], cv2.FM_8POINT)[0]
-    F_true = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
+    #F_true = cv2.findFundamentalMat(pts1, pts2, cv2.FM_8POINT)[0]
+    F_true = cv2.findFundamentalMat(pts1, pts2, cv2.FM_RANSAC)[0]
 
     #todo: FindFundamentalMatrix
     if use_ransac:
